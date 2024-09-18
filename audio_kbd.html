@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html><head><script src="https://cdn.jsdelivr.net/npm/webmidi@latest/dist/iife/webmidi.iife.js"></script><style>
+body {background-color: #000; font-color: #AAA}
+textarea, input, canvas {font-family: monospace; background-color: #222; color: #AAA; border: solid 1px #444}
+:disabled {color: #58A}
+.ok {color:#0A0}
+.ko {color:#F00}
+#midistatus {width:800px}
+#status {width:800px}
+.doc {width:800px;height:265px}
+.code {width:800px;height:300px}
+canvas.scope {width:256px; height:512px}
+</style></head><body><script id="G" language="s">
+const M=Math;
+const f=sampleRate;
+const h=f/2;
+const Toolbox = {
+	// Waveforms
+	saw:function(x){return ((x+h)%f)/h-1},
+	triangle:function(x){return M.abs((x+h)%f-h)*4/f-1},
+	pulse:function(x){return x%f<h?-1:1},
+	sine:function(x){return M.sin((x%f)*M.PI/h)},
+	noise:function(x){return M.random()*2-1},
+
+	// Envelopes
+	exp:function(x,i){let z=x/sampleRate;return M.max(.3,M.exp(-2*z))*(z<.1?10*z:z<i.s-.1?1:z<i.s?i.s*10-10*z:0)},
+
+	// Note to frequency
+	noteFreq:function(n){return 440*M.pow(2,n/12)}
+};
+
+class G extends AudioWorkletProcessor {
+	constructor (context) {
+		super(context, 'G');
+		this.port.onmessage = this.onMessage.bind(this);
+		this.notes = {};
+		this.gen = function(x, note, velocity, pressed, state) {
+			retun [0., 0.];
+			/*			
+			state.amplitude = 0.9999*(state.amplitude||0.);
+			if (pressed) state.amplitude += 0.0001;
+				let freq=Toolbox.noteFreq(note);
+			return [
+				Math.pow(0.4*velocity*state.amplitude*Toolbox.triangle(freq*x + f*.5*Toolbox.sine(freq*1.01*x)), 2 ),
+				Math.pow(0.4*velocity*state.amplitude*Toolbox.triangle(freq*x + f*.5*Toolbox.sine(freq*0.99*x)), 2 )
+			];
+			*/
+		};
+		this.x = 0;
+	}
+	process (inputs, outputs, parameters) {
+		const output = outputs[0]
+		const levelThreshold = 0.001; // Output level below which note is considered inactive
+		const samplesThreshold = f; // Number of consecutive samples output level must be below threshold for note to be considered inactive
+		for( let sample=0 ; sample<output[0].length ; sample++ ) {
+			let sig=[0,0];
+			for( let note in this.notes )
+			{
+				let lr = this.gen (
+						this.x - this.notes[note].x0,
+						note,
+						this.notes[note].velocity,
+						this.notes[note].pressed,
+						this.notes[note].state,
+						Toolbox );
+				sig[0]+=lr[0];
+				sig[1]+=lr[1];
+				if (Math.abs(lr[0]<levelThreshold) && Math.abs(lr[1]<levelThreshold)) {
+					this.notes[note]._zeroCount++;
+					if (this.notes[note]._zeroCount >= samplesThreshold)
+					{
+						delete this.notes[note];
+					}				
+				}
+				else {
+					this.notes[note]._zeroCount = 0;
+				}
+			}
+			this.x++;
+			output[0][sample] = sig[0];
+			output[1][sample] = sig[1];
+		}
+		return true
+	}
+	onMessage (e) {
+		//console.log(e.data);
+		let type = e.data.type;
+		if (type == "code") {
+//			console.log(e.data.code);
+			try {
+				let fun = new Function('x', 'note', "velocity", 'pressed', 'state', 'T', e.data.code);
+				fun(0,0,0,true,{},Toolbox);
+				if (fun) {
+					this.gen = fun;
+					this.port.postMessage ({statusOK:true, msg:"Generator OK"});
+					//console.log("new generator function OK\nfunction(x, note, pressed, state) {\n" + e.data.code + "\n}");
+				}
+			}
+			catch(e)
+			{
+				this.port.postMessage ({statusOK:false, msg:e});
+				//console.error(e);
+			}
+		}
+		else {
+			let note = e.data.note;
+			if( !this.notes[note] ) {
+				this.notes[note] = { x0: this.x, state: {} };
+			}
+			if (type == "press" )
+			{
+				this.notes[note].x0 = this.x;
+				this.notes[note].pressed = true;
+				this.notes[note].velocity = e.data.velocity;
+			}
+			else
+			{
+				this.notes[note].pressed = false;
+			}
+		}
+	}
+}
+
+registerProcessor('G', G)
+</script>
+<script lang="javascript">
+var audioCtx;
+var midiIn = [];
+var synths = [];
+
+function onMIDISuccess(midi)
+{
+	document.getElementById('midistatus').value = "MIDI OK:";
+	document.getElementById('midistatus').classList.replace("ko","ok");
+	console.log("MIDI init OK");
+
+	midiIn = [];
+  
+	const inputs = midi.inputs.values();
+	for (let input = inputs.next(); input && !input.done; input = inputs.next()) {
+		midiIn.push(input.value);
+	}
+	for (const input of midiIn) {
+		input.addEventListener('midimessage', midiMessageReceived);
+		document.getElementById('midistatus').value += " [" + input.name + "]";
+	}
+}
+
+function onMIDIFailure(msg)
+{
+	document.getElementById('midistatus').value = " MIDI init failed: "+msg;
+	document.getElementById('midistatus').classList.replace("ok","ko");
+	console.warn("MIDI init failed: ", msg);
+}
+
+function initMIDI()
+{
+	navigator.requestMIDIAccess().then(
+		(midi) => onMIDISuccess(midi),
+		(msg) => onMIDIFailure(msg) );
+}
+
+function scope(analyzer, canvas) {
+	const canvasCtx = canvas.getContext("2d");
+  	const WIDTH = canvas.width;
+	const HEIGHT = canvas.height;
+	
+	analyzer.fftSize = 2048;
+	const bufferLength = analyzer.frequencyBinCount;
+	const dataArray = new Uint8Array(bufferLength);
+	var spectrometerX = 0;
+	const draw = () => {
+		drawVisual = requestAnimationFrame(draw);
+
+		analyzer.getByteTimeDomainData(dataArray);
+
+		canvasCtx.fillStyle = "rgb(32,32,32)";
+		canvasCtx.fillRect(0, 0, WIDTH, HEIGHT/2);
+
+		canvasCtx.lineWidth = 1;
+		canvasCtx.strokeStyle = "rgb(0,128,0)";
+
+		canvasCtx.beginPath();
+
+		const sliceWidth = (WIDTH * 1.0) / bufferLength;
+		let x = 0;
+
+		for (let i = 0; i < bufferLength; i++) {
+			const v = dataArray[i] / 128.0;
+			const y = (v * HEIGHT) / 4;
+
+			if (i === 0) {
+				canvasCtx.moveTo(x, y);
+			}
+			else {
+				canvasCtx.lineTo(x, y);
+			}
+
+			x += sliceWidth;
+		}
+
+		//canvasCtx.lineTo(WIDTH, HEIGHT / 4);
+		canvasCtx.stroke();
+		
+		analyzer.getByteFrequencyData(dataArray);
+		
+		for (let i = 0 ; i<bufferLength/2 ; i++) {
+			const v = 3*dataArray[i];
+			if ( v<256 )
+				canvasCtx.fillStyle = "rgb("+v+" 0 0)";
+			else if ( v<512 )
+				canvasCtx.fillStyle = "rgb(255 "+(v-256)+" 0)";
+			else
+				canvasCtx.fillStyle = "rgb(255 255 "+(v-512)+")";
+			canvasCtx.fillRect (spectrometerX, HEIGHT-1 - HEIGHT*(i/bufferLength), 1, 1);
+		}
+		spectrometerX = (spectrometerX+1)%WIDTH;
+	};
+
+	draw();	
+}
+
+class Synth {
+	constructor(audioCtx)
+	{
+		this.generator = new AudioWorkletNode(audioCtx, 'G', {
+			outputChannelCount: [2],
+			numberOfInputs: 0,
+			numberOfOutputs: 1
+		});
+		this.generator.port.onmessage = this.onMessage.bind(this);
+		
+		this.splitter = audioCtx.createChannelSplitter(2);
+		this.generator.connect(this.splitter);
+		this.left = audioCtx.createAnalyser();
+		this.splitter.connect(this.left, 0);
+		this.right = audioCtx.createAnalyser();
+		this.splitter.connect(this.right, 1);
+		this.merger = audioCtx.createChannelMerger(2);
+		this.left.connect (this.merger, 0, 0);
+		this.right.connect (this.merger, 0, 1);
+		this.merger.connect (audioCtx.destination);
+		
+		const template = document.querySelector("#template");
+		var div = template.content.cloneNode(true);
+		document.body.appendChild(div);
+		this.div = document.querySelector("div:last-of-type");
+		
+		scope( this.left, this.div.querySelector(".left") );
+		scope( this.right, this.div.querySelector(".right") );
+		
+		this.div.querySelector('.status').value = "Ready. No user code submitted yet.";
+		this.div.querySelector('.status').classList.replace("ko","ok");
+		this.div.querySelector('.submit').onclick = this.submitCode.bind(this);
+		this.submitCode();
+		
+		synths.push(this);
+	}
+	
+	submitCode() {
+		var msg = {
+			type: "code",
+			code: this.div.querySelector(".code").value
+		};
+		//console.log(msg);
+		this.generator.port.postMessage (msg);
+	}
+	
+	onMessage(e) {
+		let status=this.div.querySelector('.status');
+		if( e.data.statusOK )
+		{
+			status.classList.replace("ko","ok");
+			status.value = e.data.msg;
+		}
+		else
+		{
+			status.classList.replace("ok","ko");
+			status.value = e.data.msg;
+		}
+	}
+
+}
+
+async function go() {
+	//console.log("go!");
+	if(audioCtx)
+		return;
+	audioCtx = new AudioContext({sampleRate: 44100});
+	await audioCtx.audioWorklet.addModule("data:text/javascript;base64,"+btoa(G.text));
+}
+
+async function addSynth () {
+	await go();
+	new Synth (audioCtx);
+}
+
+const classicLayout = {
+	"IntlBackslash": -22,
+	
+	"KeyZ": -21,
+	"KeyS": -20,
+	"KeyX": -19,
+	"KeyD": -18,
+	"KeyC": -17,
+	
+	"KeyV": -16,
+	"KeyG": -15,
+	"KeyB": -14,
+	"KeyH": -13,
+	"KeyN": -12,
+	"KeyJ": -11,
+	"KeyM": -10,
+	
+	"Comma": -9,
+	"KeyL": -8,
+	"Period": -7,
+	"Semicolon": -6,
+	"Slash": -5,
+	
+	"KeyQ": -4,
+	"Digit2": -3,
+	"KeyW": -2,
+	"Digit3": -1,
+	"KeyE": 0,
+	"Digit4": 1,
+	"KeyR": 2,
+	
+	"KeyT": 3,
+	"Digit6": 4,
+	"KeyY": 5,
+	"Digit7": 6,
+	"KeyU": 7,
+
+	"KeyI": 8,
+	"Digit9": 9,
+	"KeyO": 10,
+	"Digit0": 11,
+	"KeyP": 12,
+	"Minux": 13,
+	"BracketLeft": 14,
+	
+	"BracketRight": 15
+};
+
+const keyCode2Note = classicLayout;
+var pressedKeys = [];
+
+function dispatchMessage (msg) {
+	//console.log(msg);
+	if (synths.length > 0) {
+		synths.forEach ( (synth) => synth.generator.port.postMessage (msg) );
+	}
+}
+
+function onKeyEvent(e) {
+	//console.log( "onKeyEvent " +e.type +" "+e.key+" "+e.code+" "+e.repeat );
+	if (typeof(keyCode2Note[e.code])!="undefined" && !e.repeat) {
+		var msg = {
+			type: (e.type == "keyup" ? "release" : "press"),
+			note: keyCode2Note[e.code]
+		};
+		if (e.type == "keydown") {
+			// Workaround e.repeat always being false on Firefox 129 on Ubuntu 22.04
+			if (pressedKeys[msg.note]) return;
+			pressedKeys[msg.note] = true;
+			msg.velocity = 1;
+		}
+		else
+			pressedKeys[msg.note] = false;
+		dispatchMessage (msg);
+	}
+}
+
+document.body.onkeydown = document.body.onkeyup = onKeyEvent;
+
+function midiMessageReceived(event) {
+	// MIDI commands we care about. See
+	// http://webaudio.github.io/web-midi-api/#a-simple-monophonic-sine-wave-midi-synthesizer.
+	const NOTE_ON = 9;
+	const NOTE_OFF = 8;
+
+	const cmd = event.data[0] >> 4;
+	const pitch = event.data[1];
+	const velocity = (event.data.length > 2) ? event.data[2]/127. : 1;
+  
+	if (cmd === NOTE_OFF || cmd === NOTE_ON) {
+		//console.log(`MIDI command ${cmd} from ${event.srcElement.name}: pitch:${pitch}, velocity: ${velocity}`);
+
+		var msg = {
+			type: (cmd == NOTE_OFF ? "release" : "press"),
+			note: pitch-69
+		};
+		if (cmd == NOTE_ON )
+			msg.velocity = velocity;
+		dispatchMessage (msg);
+	}
+}
+
+</script>
+<input type="text" disabled="disabled" id="midistatus" class="ko" value="MIDI not initialized"/><input type="submit" onclick="initMIDI()" value="init"/><br/>
+<input type="submit" onclick="addSynth()" value="Add synth"/><br/>
+<template id="template"><div>
+<input type="text" disabled="disabled" class="status ko" value="click or press key to start"/><br/>
+<textarea class="doc" disabled>/*
+context:
+sampleRate
+	 Sample rate of synthesis
+note	 Integer giving note offset in semitones from A4
+velocity float giving note velocity in range [0-1]
+x	 Integer sample index from beginning of note
+pressed	 Boolean indicating if the note key is being pressed
+state	 Object persisted between calls, separate for each note
+T	 Object containing helper functions
+	 - saw:      sawtooth waveform function, cyclic on [0-sampleRate)
+	 - triangle: triangle waveform function, cyclic on [0-sampleRate)
+	 - pulse:    pulse waveform function, cyclic on [0-sampleRate)
+	 - sine:     sine waveform function, cyclic on [0-sampleRate)
+	 - noise:    random noise waveform function
+	 - noteFreq: convert note in semitones from A4 to frequency (equal temper)
+return:  array of two floats in range [-1,1] for left and right channels
+*/</textarea><br/><textarea class="code">
+let freq=T.noteFreq(note);
+state.amplitude = pressed ? Math.exp((-2.5-0.05*note)*x/sampleRate) : 0.9995*(state.amplitude||0);
+return [
+  0.5*state.amplitude*0.2*T.sine(freq*x + 0.2*sampleRate*T.sine(freq*1.01*x)),
+  0.5*state.amplitude*0.2*T.sine(freq*x + 0.2*sampleRate*T.sine(freq*0.99*x))
+];
+</textarea><input type="submit" class="submit" value="submit"/><br/>
+<canvas class="scope left"></canvas><canvas class="scope right"></canvas>
+</div></template>
+</body></html>
