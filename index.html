@@ -1,16 +1,23 @@
 <!DOCTYPE html>
-<html><head><script src="https://cdn.jsdelivr.net/npm/webmidi@latest/dist/iife/webmidi.iife.js"></script><style>
+<html>
+  <head>
+    <script src="https://cdn.jsdelivr.net/npm/webmidi@latest/dist/iife/webmidi.iife.js"></script>
+    <style>
 body {background-color: #000; font-color: #AAA}
 textarea, input, canvas {font-family: monospace; background-color: #222; color: #AAA; border: solid 1px #444}
 :disabled {color: #58A}
 .ok {color:#0A0}
 .ko {color:#F00}
 #midistatus {width:800px}
-#status {width:800px}
+.status {width:800px}
 .doc {width:800px;height:265px}
 .code {width:800px;height:300px}
+.stop {background-color: #200; color: #F11; border: solid 1px #F11}
 canvas.scope {width:256px; height:512px}
-</style></head><body><script id="G" language="s">
+    </style>
+  </head>
+  <body>
+    <script id="G" language="s">
 const M=Math;
 const f=sampleRate;
 const h=f/2;
@@ -102,6 +109,9 @@ class G extends AudioWorkletProcessor {
 				//console.error(e);
 			}
 		}
+		else if (type == "stop") {
+			for (let note in this.notes) delete this.notes[note];
+		}
 		else {
 			let note = e.data.note;
 			if( !this.notes[note] ) {
@@ -122,8 +132,8 @@ class G extends AudioWorkletProcessor {
 }
 
 registerProcessor('G', G)
-</script>
-<script lang="javascript">
+    </script>
+    <script lang="javascript">
 var audioCtx;
 var midiIn = [];
 var synths = [];
@@ -252,6 +262,7 @@ class Synth {
 		this.div.querySelector('.status').value = "Ready. No user code submitted yet.";
 		this.div.querySelector('.status').classList.replace("ko","ok");
 		this.div.querySelector('.submit').onclick = this.submitCode.bind(this);
+		this.div.querySelector('.stop').onclick = this.emergencyStop.bind(this);
 		this.submitCode();
 		
 		synths.push(this);
@@ -265,7 +276,15 @@ class Synth {
 		//console.log(msg);
 		this.generator.port.postMessage (msg);
 	}
-	
+
+	emergencyStop() {
+		var msg = {
+			type: "stop",
+		};
+		//console.log(msg);
+		this.generator.port.postMessage (msg);
+	}
+
 	onMessage(e) {
 		let status=this.div.querySelector('.status');
 		if( e.data.statusOK )
@@ -397,12 +416,13 @@ function midiMessageReceived(event) {
 	}
 }
 
-</script>
-<input type="text" disabled="disabled" id="midistatus" class="ko" value="MIDI not initialized"/><input type="submit" onclick="initMIDI()" value="init"/><br/>
-<input type="submit" onclick="addSynth()" value="Add synth"/><br/>
-<template id="template"><div>
-<input type="text" disabled="disabled" class="status ko" value="click or press key to start"/><br/>
-<textarea class="doc" disabled>/*
+    </script>
+    <input type="text" disabled="disabled" id="midistatus" class="ko" value="MIDI not initialized"/>
+    <input type="submit" onclick="initMIDI()" value="init"/><br/>
+    <input type="submit" onclick="addSynth()" value="Add synth"/><br/>
+    <template id="template"><div>
+	<input type="text" disabled="disabled" class="status ko" value="click or press key to start"/><br/>
+	<textarea class="doc" disabled>/*
 context:
 sampleRate
 	 Sample rate of synthesis
@@ -419,14 +439,19 @@ T	 Object containing helper functions
 	 - noise:    random noise waveform function
 	 - noteFreq: convert note in semitones from A4 to frequency (equal temper)
 return:  array of two floats in range [-1,1] for left and right channels
-*/</textarea><br/><textarea class="code">
+	  */</textarea><br/>
+	<textarea class="code">
 let freq=T.noteFreq(note);
 state.amplitude = pressed ? Math.exp((-2.5-0.05*note)*x/sampleRate) : 0.9995*(state.amplitude||0);
 return [
   0.5*state.amplitude*0.2*T.sine(freq*x + 0.2*sampleRate*T.sine(freq*1.01*x)),
   0.5*state.amplitude*0.2*T.sine(freq*x + 0.2*sampleRate*T.sine(freq*0.99*x))
 ];
-</textarea><input type="submit" class="submit" value="submit"/><br/>
-<canvas class="scope left"></canvas><canvas class="scope right"></canvas>
-</div></template>
-</body></html>
+	</textarea><br/>
+	<input type="submit" class="submit" value="submit"/>
+	<input type="submit" class="stop" value="STOP!"/><br/>
+	<canvas class="scope left"></canvas><canvas class="scope right"></canvas>
+      </div>
+    </template>
+  </body>
+</html>
