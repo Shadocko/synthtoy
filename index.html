@@ -455,7 +455,7 @@ T	 Object containing helper functions
 	 - adsr(x,pressed,state,attack,decay,sustain,release): ADSR enveloppe function
 return:  array of two floats in range [-1,1] for left and right channels
 */</textarea><br/>
-	<textarea class="code">
+	<textarea class="code" spellcheck="false">
 let freq=T.noteFreq(note);
 state.amplitude = pressed ? Math.exp((-2.5-0.05*note)*x/sampleRate) : 0.9995*(state.amplitude||0);
 return [
