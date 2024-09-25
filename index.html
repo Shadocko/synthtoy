@@ -10,7 +10,7 @@ textarea, input, canvas {font-family: monospace; background-color: #222; color: 
 .ko {color:#F00}
 #midistatus {width:800px}
 .status {width:800px}
-.doc {width:800px;height:265px}
+.doc {width:800px;height:300px}
 .code {width:800px;height:300px}
 .stop {background-color: #200; color: #F11; border: solid 1px #F11}
 canvas.scope {width:256px; height:512px}
@@ -30,7 +30,20 @@ const Toolbox = {
 	noise:function(x){return M.random()*2-1},
 
 	// Envelopes
-	exp:function(x,i){let z=x/sampleRate;return M.max(.3,M.exp(-2*z))*(z<.1?10*z:z<i.s-.1?1:z<i.s?i.s*10-10*z:0)},
+	exp:function(x,k){return M.exp(-k*x/sampleRate);},
+	adsr:function(x,pressed,state,a,d,s,r) {
+		let t=x/sampleRate;
+		if(state._was_pressed && !pressed) {
+			state._release_t=t;
+			state._release_s=t<a?(t/a):(t-a)<d?(1-(1-s)*(t-a)/d):s;
+		}
+		state._was_pressed=pressed;
+		if(pressed) return t<a?(t/a):(t-a)<d?(1-(1-s)*(t-a)/d):s;
+		else {
+		    t-=state._release_t;
+		    return t<r?state._release_s*(1.-t/r):0;
+		}
+	},
 
 	// Note to frequency
 	noteFreq:function(n){return 440*M.pow(2,n/12)}
@@ -438,6 +451,8 @@ T	 Object containing helper functions
 	 - sine:     sine waveform function, cyclic on [0-sampleRate)
 	 - noise:    random noise waveform function
 	 - noteFreq: convert note in semitones from A4 to frequency (equal temper)
+	 - exp(x,k): exponential extinction enveloppe function
+	 - adsr(x,pressed,state,attack,decay,sustain,release): ADSR enveloppe function
 return:  array of two floats in range [-1,1] for left and right channels
 */</textarea><br/>
 	<textarea class="code">
