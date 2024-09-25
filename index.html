@@ -439,7 +439,7 @@ T	 Object containing helper functions
 	 - noise:    random noise waveform function
 	 - noteFreq: convert note in semitones from A4 to frequency (equal temper)
 return:  array of two floats in range [-1,1] for left and right channels
-	  */</textarea><br/>
+*/</textarea><br/>
 	<textarea class="code">
 let freq=T.noteFreq(note);
 state.amplitude = pressed ? Math.exp((-2.5-0.05*note)*x/sampleRate) : 0.9995*(state.amplitude||0);
@@ -447,7 +447,7 @@ return [
   0.5*state.amplitude*0.2*T.sine(freq*x + 0.2*sampleRate*T.sine(freq*1.01*x)),
   0.5*state.amplitude*0.2*T.sine(freq*x + 0.2*sampleRate*T.sine(freq*0.99*x))
 ];
-	</textarea><br/>
+</textarea><br/>
 	<input type="submit" class="submit" value="submit"/>
 	<input type="submit" class="stop" value="STOP!"/><br/>
 	<canvas class="scope left"></canvas><canvas class="scope right"></canvas>
