@@ -386,6 +386,10 @@ function dispatchMessage (msg) {
 }
 
 function onKeyEvent(e) {
+	if (document.activeElement && document.activeElement.className=="code") {
+		return;
+	}
+	
 	//console.log( "onKeyEvent " +e.type +" "+e.key+" "+e.code+" "+e.repeat );
 	if (typeof(keyCode2Note[e.code])!="undefined" && !e.repeat) {
 		var msg = {
