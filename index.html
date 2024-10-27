@@ -4,11 +4,13 @@
     <script src="https://cdn.jsdelivr.net/npm/webmidi@latest/dist/iife/webmidi.iife.js"></script>
     <style>
 body {background-color: #000; font-color: #AAA}
-textarea, input, canvas {font-family: monospace; background-color: #222; color: #AAA; border: solid 1px #444; resize: vertical}
+textarea, input, canvas, .midi-input, .input-mappings {font-family: monospace; background-color: #222; color: #AAA; border: solid 1px #444; padding: 2px}
+textarea {resize: vertical}
 :disabled {color: #58A}
 .ok {color:#0A0}
 .ko {color:#F00}
 #midistatus {width:800px}
+fieldset.input-mappings {width: 794px; padding: 5px; margin: 0}
 .status {width:800px}
 .doc {width:800px;height:300px}
 .code {width:800px;height:300px}
@@ -264,10 +266,10 @@ class Synth {
 		this.right.connect (this.merger, 0, 1);
 		this.merger.connect (audioCtx.destination);
 		
-		const template = document.querySelector("#template");
+		const template = document.querySelector("#synth-template");
 		var div = template.content.cloneNode(true);
 		document.body.appendChild(div);
-		this.div = document.querySelector("div:last-of-type");
+		this.div = document.querySelector("div[class='synth']:last-of-type");
 		
 		scope( this.left, this.div.querySelector(".left") );
 		scope( this.right, this.div.querySelector(".right") );
@@ -277,8 +279,29 @@ class Synth {
 		this.div.querySelector('.submit').onclick = this.submitCode.bind(this);
 		this.div.querySelector('.stop').onclick = this.emergencyStop.bind(this);
 		this.submitCode();
+
+		this.inputs = {};
+		this.addInput("keyboard");
+		for (const input of midiIn) {
+			this.addInput(input.name);
+		}
 		
 		synths.push(this);
+	}
+
+	addInput(name) {
+		const template = document.querySelector("#input-template");
+		var div = template.content.cloneNode(true);
+		let mappingsFieldset = this.div.querySelector(".input-mappings");
+		mappingsFieldset.appendChild(div);
+		let inputDiv = mappingsFieldset.querySelector("div:last-of-type");
+		inputDiv.querySelector("label").innerText = name;
+		var checkbox = inputDiv.querySelector("input[type='checkbox']");
+		var input = { enabled: true, div: inputDiv };
+		checkbox.onchange = function() {
+			input.enabled = checkbox.checked;
+		};
+		this.inputs[name] = input;
 	}
 	
 	submitCode() {
@@ -298,6 +321,11 @@ class Synth {
 		this.generator.port.postMessage (msg);
 	}
 
+	onKeyEvent(e) {
+		if (this.inputs[e.from].enabled)
+			this.generator.port.postMessage(e);
+	}
+	
 	onMessage(e) {
 		let status=this.div.querySelector('.status');
 		if( e.data.statusOK )
@@ -378,10 +406,10 @@ const classicLayout = {
 const keyCode2Note = classicLayout;
 var pressedKeys = [];
 
-function dispatchMessage (msg) {
+function dispatchKeyEvent (msg) {
 	//console.log(msg);
 	if (synths.length > 0) {
-		synths.forEach ( (synth) => synth.generator.port.postMessage (msg) );
+		synths.forEach ( (synth) => synth.onKeyEvent(msg) );
 	}
 }
 
@@ -394,7 +422,8 @@ function onKeyEvent(e) {
 	if (typeof(keyCode2Note[e.code])!="undefined" && !e.repeat) {
 		var msg = {
 			type: (e.type == "keyup" ? "release" : "press"),
-			note: keyCode2Note[e.code]
+			note: keyCode2Note[e.code],
+			from: 'keyboard'
 		};
 		if (e.type == "keydown") {
 			// Workaround e.repeat always being false on Firefox 129 on Ubuntu 22.04
@@ -404,7 +433,7 @@ function onKeyEvent(e) {
 		}
 		else
 			pressedKeys[msg.note] = false;
-		dispatchMessage (msg);
+		dispatchKeyEvent (msg);
 	}
 }
 
@@ -421,23 +450,26 @@ function midiMessageReceived(event) {
 	const velocity = (event.data.length > 2) ? event.data[2]/127. : 1;
   
 	if (cmd === NOTE_OFF || cmd === NOTE_ON) {
-		//console.log(`MIDI command ${cmd} from ${event.srcElement.name}: pitch:${pitch}, velocity: ${velocity}`);
+		console.log(`MIDI command ${cmd} from ${event.srcElement.name}: pitch:${pitch}, velocity: ${velocity}`);
 
 		var msg = {
 			type: (cmd == NOTE_OFF ? "release" : "press"),
-			note: pitch-69
+			note: pitch-69,
+			from: event.srcElement.name
 		};
 		if (cmd == NOTE_ON )
 			msg.velocity = velocity;
-		dispatchMessage (msg);
+		dispatchKeyEvent (msg);
 	}
 }
 
     </script>
     <input type="text" disabled="disabled" id="midistatus" class="ko" value="MIDI not initialized"/>
-    <input type="submit" onclick="initMIDI()" value="init"/><br/>
+    <input type="submit" onclick="initMIDI()" value="init MIDI"/><br/>
     <input type="submit" onclick="addSynth()" value="Add synth"/><br/>
-    <template id="template"><div>
+    <template id="synth-template">
+      <div class="synth">
+	<fieldset class="input-mappings"><legend>Input mappings</legend></fieldset>
 	<input type="text" disabled="disabled" class="status ko" value="click or press key to start"/><br/>
 	<textarea class="doc" disabled>/*
 context:
@@ -471,6 +503,12 @@ return [
 	<input type="submit" class="stop" value="STOP!"/><br/>
 	<canvas class="scope left"></canvas><canvas class="scope right"></canvas>
       </div>
+    </template>
+    <template id="input-template">
+      <div class="midi-input">
+	<input type="checkbox" checked />
+	<label></label>
+      </divt>
     </template>
   </body>
 </html>
