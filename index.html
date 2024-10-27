@@ -12,6 +12,8 @@ textarea {resize: vertical}
 #midistatus {width:800px}
 fieldset.input-mappings {width: 794px; padding: 5px; margin: 0}
 .status {width:800px}
+.small {width:30px}
+div.right {float:right}
 .doc {width:800px;height:300px}
 .code {width:800px;height:300px}
 .stop {background-color: #200; color: #F11; border: solid 1px #F11}
@@ -294,12 +296,24 @@ class Synth {
 		var div = template.content.cloneNode(true);
 		let mappingsFieldset = this.div.querySelector(".input-mappings");
 		mappingsFieldset.appendChild(div);
-		let inputDiv = mappingsFieldset.querySelector("div:last-of-type");
+		let inputDiv = mappingsFieldset.querySelector("div[class='midi-input']:last-of-type");
 		inputDiv.querySelector("label").innerText = name;
-		var checkbox = inputDiv.querySelector("input[type='checkbox']");
-		var input = { enabled: true, div: inputDiv };
+		var input = { enabled: true, min: -48, max: 40, shift: 0, div: inputDiv };
+		var checkbox = inputDiv.querySelector("input[name='enable']");
 		checkbox.onchange = function() {
 			input.enabled = checkbox.checked;
+		};
+		var minBox = inputDiv.querySelector("input[name='min-note']");
+		minBox.onchange = function() {
+			input.min = parseInt(minBox.value, 10);
+		};
+		var maxBox = inputDiv.querySelector("input[name='max-note']");
+		maxBox.onchange = function() {
+			input.max = parseInt(maxBox.value, 10);
+		};
+		var shiftBox = inputDiv.querySelector("input[name='note-shift']");
+		shiftBox.onchange = function() {
+			input.shift = parseInt(shiftBox.value, 10);
 		};
 		this.inputs[name] = input;
 	}
@@ -322,8 +336,14 @@ class Synth {
 	}
 
 	onKeyEvent(e) {
-		if (this.inputs[e.from].enabled)
+		let input = this.inputs[e.from];
+		if (input.enabled && input.min<=e.note && input.max>=e.note ) {
+			if ( input.shift != 0 ) {
+				e = structuredClone(e);
+				e.note += input.shift
+			}
 			this.generator.port.postMessage(e);
+		}
 	}
 	
 	onMessage(e) {
@@ -506,8 +526,16 @@ return [
     </template>
     <template id="input-template">
       <div class="midi-input">
-	<input type="checkbox" checked />
-	<label></label>
+	<input type="checkbox" name="enable" checked />
+	<label for="enable"></label>
+	<div class="right">
+	<label for="min-note">Lowest note</label>
+	<input type="text" name="min-note" class="small" value="-48" />
+	<label for="max-note">Highest note</label>
+	<input type="text" name="max-note" class="small" value="40" />
+	<label for="note-shift">Shift</label>
+	<input type="text" name="note-shift" class="small" value="0" />
+	</div>
       </divt>
     </template>
   </body>
