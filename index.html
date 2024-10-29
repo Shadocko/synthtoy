@@ -9,7 +9,8 @@ textarea {resize: vertical}
 :disabled {color: #58A}
 .ok {color:#0A0}
 .ko {color:#F00}
-#midistatus {width:800px}
+#initmidi {width:78px}
+#midistatus {width:718px}
 fieldset.input-mappings {width:794px;padding:5px;margin:0;overflow:clip}
 fieldset.input-mappings.collapsed {height:0;padding:5px 5px 0}
 .status {width:800px}
@@ -524,8 +525,8 @@ function midiMessageReceived(event) {
 }
 
     </script>
-    <input type="text" disabled="disabled" id="midistatus" class="ko" value="MIDI not initialized"/>
-    <input type="submit" onclick="initMIDI()" value="init MIDI"/><br/>
+    <input type="submit" onclick="initMIDI()" id="initmidi" value="init MIDI"/>
+    <input type="text" disabled="disabled" id="midistatus" class="ko" value="MIDI not initialized"/><br/>
     <input type="submit" onclick="addSynth()" value="Add synth"/><br/>
     <template id="synth-template">
       <div class="synth">
