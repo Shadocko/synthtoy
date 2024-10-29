@@ -4,13 +4,14 @@
     <script src="https://cdn.jsdelivr.net/npm/webmidi@latest/dist/iife/webmidi.iife.js"></script>
     <style>
 body {background-color: #000; font-color: #AAA}
-textarea, input, canvas, .midi-input, .input-mappings, dialog, button {font-family: monospace; background-color: #222; color: #AAA; border: solid 1px #444; padding: 2px}
+textarea, input, canvas, .midi-input, .input-mappings, dialog, button {font-family:monospace;background-color:#222;color:#AAA;border:solid 1px #444;padding: 2px}
 textarea {resize: vertical}
 :disabled {color: #58A}
 .ok {color:#0A0}
 .ko {color:#F00}
 #midistatus {width:800px}
-fieldset.input-mappings {width: 794px; padding: 5px; margin: 0}
+fieldset.input-mappings {width:794px;padding:5px;margin:0;overflow:clip}
+fieldset.input-mappings.collapsed {height:0;padding:5px 5px 0}
 .status {width:800px}
 .small {width:30px}
 div.right {float:right}
@@ -528,7 +529,7 @@ function midiMessageReceived(event) {
     <input type="submit" onclick="addSynth()" value="Add synth"/><br/>
     <template id="synth-template">
       <div class="synth">
-	<fieldset class="input-mappings"><legend>Input mappings</legend></fieldset>
+	<fieldset class="input-mappings collapsed" onclick="this.classList.toggle('collapsed')"><legend>Input mappings</legend></fieldset>
 	<input type="text" disabled="disabled" class="status ko" value="click or press key to start"/><br/>
 	<textarea class="doc" disabled>/*
 context:
