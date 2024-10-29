@@ -4,7 +4,7 @@
     <script src="https://cdn.jsdelivr.net/npm/webmidi@latest/dist/iife/webmidi.iife.js"></script>
     <style>
 body {background-color: #000; font-color: #AAA}
-textarea, input, canvas, .midi-input, .input-mappings, dialog, button {font-family:monospace;background-color:#222;color:#AAA;border:solid 1px #444;padding: 2px}
+textarea, input, canvas, .midi-input, .input-mappings, dialog, button {font-family:monospace;background-color:#222;color:#AAA;border:solid 1px #444;padding:2px}
 textarea {resize: vertical}
 :disabled {color: #58A}
 .ok {color:#0A0}
@@ -18,7 +18,7 @@ div.right {float:right}
 .doc {width:800px;height:300px}
 .code {width:800px;height:300px}
 .stop {background-color: #200; color: #F11; border: solid 1px #F11}
-canvas.scope {width:256px; height:512px}
+canvas.scope {width:400px;height:200px;padding:0; margin-right:2px}
 dialog::backdrop {background: rgba(0,0,0,0.5)}
     </style>
   </head>
@@ -210,19 +210,19 @@ class Scope {
 			analyzer.getByteTimeDomainData(dataArray);
 
 			canvasCtx.fillStyle = "rgb(32,32,32)";
-			canvasCtx.fillRect(0, 0, WIDTH, HEIGHT/2);
+			canvasCtx.fillRect(0, 0, WIDTH/2, HEIGHT);
 
 			canvasCtx.lineWidth = 1;
 			canvasCtx.strokeStyle = "rgb(0,128,0)";
 
 			canvasCtx.beginPath();
 
-			const sliceWidth = (WIDTH * 1.0) / bufferLength;
+			const sliceWidth = (WIDTH * 0.5) / bufferLength;
 			let x = 0;
 
 			for (let i = 0; i < bufferLength; i++) {
 				const v = dataArray[i] / 128.0;
-				const y = (v * HEIGHT) / 4;
+				const y = (v * HEIGHT) / 2;
 
 				if (i === 0) {
 					canvasCtx.moveTo(x, y);
@@ -247,9 +247,9 @@ class Scope {
 					canvasCtx.fillStyle = "rgb(255 "+(v-256)+" 0)";
 				else
 					canvasCtx.fillStyle = "rgb(255 255 "+(v-512)+")";
-				canvasCtx.fillRect (spectrometerX, HEIGHT-1 - HEIGHT*(i/bufferLength), 1, 1);
+				canvasCtx.fillRect (spectrometerX, HEIGHT-1 - HEIGHT*(2*i/bufferLength), 1, 1);
 			}
-			spectrometerX = (spectrometerX+1)%WIDTH;
+			spectrometerX = (spectrometerX+1)%(WIDTH/2) + WIDTH/2;
 		};
 
 		draw();
@@ -561,7 +561,7 @@ return [
 </textarea><br/>
 	<input type="submit" class="submit" value="submit"/>
 	<input type="submit" class="stop" value="STOP!"/>
-	<input type="submit" class="delete" value="delete"/><br/>
+	<input type="submit" class="delete" value="&#x274C; delete"/><br/>
 	<dialog name="delete">
 	  <p>Really delete synth?</p>
 	  <button name="yes">Yes</button>
