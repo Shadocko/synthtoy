@@ -16,4 +16,4 @@ Just point your browser to https://shadocko.github.io/synthtoy/
 
 # License
 
-Synthtoy is released under the terms of the [GNU GENERAL PUBLIC LICENSE v3}(https://www.gnu.org/licenses/gpl-3.0.en.html).
+Synthtoy is released under the terms of the [GNU GENERAL PUBLIC LICENSE v3](https://www.gnu.org/licenses/gpl-3.0.en.html).
