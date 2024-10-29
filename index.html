@@ -4,7 +4,7 @@
     <script src="https://cdn.jsdelivr.net/npm/webmidi@latest/dist/iife/webmidi.iife.js"></script>
     <style>
 body {background-color: #000; font-color: #AAA}
-textarea, input, canvas, .midi-input, .input-mappings {font-family: monospace; background-color: #222; color: #AAA; border: solid 1px #444; padding: 2px}
+textarea, input, canvas, .midi-input, .input-mappings, dialog, button {font-family: monospace; background-color: #222; color: #AAA; border: solid 1px #444; padding: 2px}
 textarea {resize: vertical}
 :disabled {color: #58A}
 .ok {color:#0A0}
@@ -18,6 +18,7 @@ div.right {float:right}
 .code {width:800px;height:300px}
 .stop {background-color: #200; color: #F11; border: solid 1px #F11}
 canvas.scope {width:256px; height:512px}
+dialog::backdrop {background: rgba(0,0,0,0.5)}
     </style>
   </head>
   <body>
@@ -187,64 +188,75 @@ function initMIDI()
 		(msg) => onMIDIFailure(msg) );
 }
 
-function scope(analyzer, canvas) {
-	const canvasCtx = canvas.getContext("2d");
-  	const WIDTH = canvas.width;
-	const HEIGHT = canvas.height;
+class Scope {
+	constructor (analyzer, canvas) {
+		this.terminated = false;
+
+		const canvasCtx = canvas.getContext("2d");
+		const WIDTH = canvas.width;
+		const HEIGHT = canvas.height;
 	
-	analyzer.fftSize = 2048;
-	const bufferLength = analyzer.frequencyBinCount;
-	const dataArray = new Uint8Array(bufferLength);
-	var spectrometerX = 0;
-	const draw = () => {
-		drawVisual = requestAnimationFrame(draw);
+		analyzer.fftSize = 2048;
+		const bufferLength = analyzer.frequencyBinCount;
+		const dataArray = new Uint8Array(bufferLength);
+		var spectrometerX = 0;
+		var drawVisual = null;
+		const draw = () => {
+			if (this.terminated) return;
 
-		analyzer.getByteTimeDomainData(dataArray);
+			drawVisual = requestAnimationFrame(draw);
 
-		canvasCtx.fillStyle = "rgb(32,32,32)";
-		canvasCtx.fillRect(0, 0, WIDTH, HEIGHT/2);
+			analyzer.getByteTimeDomainData(dataArray);
 
-		canvasCtx.lineWidth = 1;
-		canvasCtx.strokeStyle = "rgb(0,128,0)";
+			canvasCtx.fillStyle = "rgb(32,32,32)";
+			canvasCtx.fillRect(0, 0, WIDTH, HEIGHT/2);
 
-		canvasCtx.beginPath();
+			canvasCtx.lineWidth = 1;
+			canvasCtx.strokeStyle = "rgb(0,128,0)";
 
-		const sliceWidth = (WIDTH * 1.0) / bufferLength;
-		let x = 0;
+			canvasCtx.beginPath();
 
-		for (let i = 0; i < bufferLength; i++) {
-			const v = dataArray[i] / 128.0;
-			const y = (v * HEIGHT) / 4;
+			const sliceWidth = (WIDTH * 1.0) / bufferLength;
+			let x = 0;
 
-			if (i === 0) {
-				canvasCtx.moveTo(x, y);
+			for (let i = 0; i < bufferLength; i++) {
+				const v = dataArray[i] / 128.0;
+				const y = (v * HEIGHT) / 4;
+
+				if (i === 0) {
+					canvasCtx.moveTo(x, y);
+				}
+				else {
+					canvasCtx.lineTo(x, y);
+				}
+
+				x += sliceWidth;
 			}
-			else {
-				canvasCtx.lineTo(x, y);
+
+			//canvasCtx.lineTo(WIDTH, HEIGHT / 4);
+			canvasCtx.stroke();
+		
+			analyzer.getByteFrequencyData(dataArray);
+		
+			for (let i = 0 ; i<bufferLength/2 ; i++) {
+				const v = 3*dataArray[i];
+				if ( v<256 )
+					canvasCtx.fillStyle = "rgb("+v+" 0 0)";
+				else if ( v<512 )
+					canvasCtx.fillStyle = "rgb(255 "+(v-256)+" 0)";
+				else
+					canvasCtx.fillStyle = "rgb(255 255 "+(v-512)+")";
+				canvasCtx.fillRect (spectrometerX, HEIGHT-1 - HEIGHT*(i/bufferLength), 1, 1);
 			}
+			spectrometerX = (spectrometerX+1)%WIDTH;
+		};
 
-			x += sliceWidth;
-		}
+		draw();
+	}
 
-		//canvasCtx.lineTo(WIDTH, HEIGHT / 4);
-		canvasCtx.stroke();
-		
-		analyzer.getByteFrequencyData(dataArray);
-		
-		for (let i = 0 ; i<bufferLength/2 ; i++) {
-			const v = 3*dataArray[i];
-			if ( v<256 )
-				canvasCtx.fillStyle = "rgb("+v+" 0 0)";
-			else if ( v<512 )
-				canvasCtx.fillStyle = "rgb(255 "+(v-256)+" 0)";
-			else
-				canvasCtx.fillStyle = "rgb(255 255 "+(v-512)+")";
-			canvasCtx.fillRect (spectrometerX, HEIGHT-1 - HEIGHT*(i/bufferLength), 1, 1);
-		}
-		spectrometerX = (spectrometerX+1)%WIDTH;
-	};
-
-	draw();	
+	terminate () {
+		this.terminated = true;
+	}
 }
 
 class Synth {
@@ -273,13 +285,14 @@ class Synth {
 		document.body.appendChild(div);
 		this.div = document.querySelector("div[class='synth']:last-of-type");
 		
-		scope( this.left, this.div.querySelector(".left") );
-		scope( this.right, this.div.querySelector(".right") );
+		this.leftScope = new Scope( this.left, this.div.querySelector(".left") );
+		this.rightScope = new Scope( this.right, this.div.querySelector(".right") );
 		
 		this.div.querySelector('.status').value = "Ready. No user code submitted yet.";
 		this.div.querySelector('.status').classList.replace("ko","ok");
 		this.div.querySelector('.submit').onclick = this.submitCode.bind(this);
 		this.div.querySelector('.stop').onclick = this.emergencyStop.bind(this);
+		this.div.querySelector('.delete').onclick = this.confirmDelete.bind(this);
 		this.submitCode();
 
 		this.inputs = {};
@@ -289,6 +302,19 @@ class Synth {
 		}
 		
 		synths.push(this);
+	}
+
+	terminate() {
+		synths.splice( synths.indexOf(this), 1 );
+
+		this.merger.disconnect();
+		this.left.disconnect();
+		this.right.disconnect();
+		this.splitter.disconnect();
+		this.generator.disconnect();
+		this.div.remove();
+		this.leftScope.terminate();
+		this.rightScope.terminate();
 	}
 
 	addInput(name) {
@@ -333,6 +359,19 @@ class Synth {
 		};
 		//console.log(msg);
 		this.generator.port.postMessage (msg);
+	}
+
+	confirmDelete() {
+		var dialog = this.div.querySelector("dialog[name='delete']");
+		var self = this;
+		dialog.querySelector("button[name='yes']").onclick = function () {
+			dialog.close();
+			self.terminate();
+		};
+		dialog.querySelector("button[name='no']").onclick = function () {
+			dialog.close();
+		};
+		dialog.showModal();
 	}
 
 	onKeyEvent(e) {
@@ -520,7 +559,13 @@ return [
 ];
 </textarea><br/>
 	<input type="submit" class="submit" value="submit"/>
-	<input type="submit" class="stop" value="STOP!"/><br/>
+	<input type="submit" class="stop" value="STOP!"/>
+	<input type="submit" class="delete" value="delete"/><br/>
+	<dialog name="delete">
+	  <p>Really delete synth?</p>
+	  <button name="yes">Yes</button>
+	  <button name="no">No</button>
+	</dialog>
 	<canvas class="scope left"></canvas><canvas class="scope right"></canvas>
       </div>
     </template>
