@@ -529,7 +529,7 @@ function midiMessageReceived(event) {
     <input type="submit" onclick="addSynth()" value="Add synth"/><br/>
     <template id="synth-template">
       <div class="synth">
-	<fieldset class="input-mappings collapsed" onclick="this.classList.toggle('collapsed')"><legend>Input mappings</legend></fieldset>
+	<fieldset class="input-mappings collapsed"><legend onclick="this.parentElement.classList.toggle('collapsed')">Input mappings</legend></fieldset>
 	<input type="text" disabled="disabled" class="status ko" value="click or press key to start"/><br/>
 	<textarea class="doc" disabled>/*
 context:
