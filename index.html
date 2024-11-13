@@ -4,23 +4,35 @@
     <script src="https://cdn.jsdelivr.net/npm/webmidi@latest/dist/iife/webmidi.iife.js"></script>
     <style>
 body {background-color: #000; font-color: #AAA}
-textarea, input, canvas, .midi-input, .input-mappings, dialog, button {font-family:monospace;background-color:#222;color:#AAA;border:solid 1px #444;padding:2px}
+textarea, input, canvas, .midi-input, .input-mappings, .looper, dialog, button {font-family:monospace;background-color:#222;color:#AAA;border:solid 1px #444;padding:2px}
 textarea {resize: vertical}
 :disabled {color: #58A}
 .ok {color:#0A0}
 .ko {color:#F00}
 #initmidi {width:78px}
 #midistatus {width:718px}
-fieldset.input-mappings {width:794px;padding:5px;margin:0;overflow:clip}
-fieldset.input-mappings.collapsed {height:0;padding:5px 5px 0}
+fieldset.input-mappings, fieldset.looper {width:794px;padding:5px;margin:0;overflow:clip}
+fieldset.collapsed {height:0;padding:5px 5px 0}
 .status {width:800px}
 .small {width:30px}
 div.right {float:right}
 .doc {width:800px;height:300px}
 .code {width:800px;height:300px}
-.stop {background-color: #200; color: #F11; border: solid 1px #F11}
+.emergency-stop {background-color: #200; color: #F11; border: solid 1px #F11}
 canvas.scope {width:400px;height:200px;padding:0; margin-right:2px}
 dialog::backdrop {background: rgba(0,0,0,0.5)}
+@keyframes pulsered {
+  0%   {background-color:#600;border: solid 1px #A00;box-shadow: rgba(255,0,0,0.2)0 0 3px 2px }
+  100% {background-color:#800;border: solid 1px #F00;box-shadow: rgba(255,0,0,0.4)0 0 3px 2px }
+}
+@keyframes pulsegreen {
+  0%   {color:#0A0;background-color:#060;border: solid 1px #0A0;box-shadow: rgba(0,255,0,0.2) 0 0 3px 2px;}
+  100% {color:#0F0;background-color:#080;border: solid 1px #0F0;box-shadow: rgba(0,255,0,0.4) 0 0 3px 2px;}
+}
+.play {color:#0A0;background-color:#020}
+.rec {color:#F00;background-color:#200}
+.play.enabled {animation-name:pulsegreen;animation-duration:0.5s;animation-direction:alternate;animation-iteration-count:infinite}
+.rec.enabled {animation-name:pulsered;animation-duration:0.5s;animation-direction:alternate;animation-iteration-count:infinite}
     </style>
   </head>
   <body>
@@ -287,14 +299,17 @@ class Synth {
 		document.body.appendChild(div);
 		this.div = document.querySelector("div[class='synth']:last-of-type");
 		
-		this.leftScope = new Scope( this.left, this.div.querySelector(".left") );
-		this.rightScope = new Scope( this.right, this.div.querySelector(".right") );
+		this.leftScope = new Scope( this.left, this.div.querySelector("canvas.left") );
+		this.rightScope = new Scope( this.right, this.div.querySelector("canvas.right") );
 		
 		this.div.querySelector('.status').value = "Ready. No user code submitted yet.";
 		this.div.querySelector('.status').classList.replace("ko","ok");
 		this.div.querySelector('.submit').onclick = this.submitCode.bind(this);
-		this.div.querySelector('.stop').onclick = this.emergencyStop.bind(this);
+		this.div.querySelector('.emergency-stop').onclick = this.emergencyStop.bind(this);
 		this.div.querySelector('.delete').onclick = this.confirmDelete.bind(this);
+		this.div.querySelector('.rec').onclick = this.looperRec.bind(this);
+		this.div.querySelector('.play').onclick = this.looperPlay.bind(this);
+		this.div.querySelector('.stop').onclick = this.looperStop.bind(this);
 		this.submitCode();
 
 		this.inputs = {};
@@ -302,6 +317,8 @@ class Synth {
 		for (const input of midiIn) {
 			this.addInput(input.name);
 		}
+
+		this.patterns = {};
 		
 		synths.push(this);
 	}
@@ -376,6 +393,78 @@ class Synth {
 		dialog.showModal();
 	}
 
+	looperRec() {
+		if (this.recPattern!==undefined) {
+			this.looperStop();
+			return;
+		}
+		if (this.playPattern!==undefined) {
+			this.looperStop();
+		}
+
+		this.div.querySelector('.rec').classList.add("enabled");
+
+		console.log("start recording...");
+		this.recPattern = "0";
+		this.recStart = 0;
+		this.patterns[this.recPattern] = {duration: 0, events: []};
+	}
+
+	looperPlay() {
+		if (this.recPattern!==undefined) {
+			this.looperStop();
+		}
+
+		this.div.querySelector('.play').classList.add("enabled");
+
+		console.log("start playing...");
+		this.playStart = Date.now();
+		this.playPattern = "0";
+		this.playEvent = 0;
+		this.looperPlayEvent();
+	}
+
+	looperPlayEvent() {
+		if (this.playPattern!==undefined && this.playEvent!==undefined && this.patterns[this.playPattern]!==undefined) {
+			let now = Date.now();
+			var e = this.patterns[this.playPattern].events[this.playEvent];
+			this.generator.port.postMessage(e);
+			++this.playEvent;
+			if (this.playEvent >= this.patterns[this.playPattern].events.length) {
+				// loop
+				let lapse = this.playStart + this.patterns[this.playPattern].duration - now;
+				this.playStart += this.patterns[this.playPattern].duration;
+				this.playEvent = 0;
+				setTimeout(this.looperPlayEvent.bind(this), lapse);
+			}
+			else {
+				let lapse = this.playStart + this.patterns[this.playPattern].events[this.playEvent].ts - now;
+				setTimeout(this.looperPlayEvent.bind(this), lapse);
+			}
+		}
+		else {
+			this.loopertop();
+		}
+	}
+
+	looperStop() {
+		this.div.querySelector('.rec').classList.remove("enabled");
+		this.div.querySelector('.play').classList.remove("enabled");
+
+		if (this.recPattern!==undefined) {
+			console.log("stop recording...");
+			let stopTime = Date.now();
+			this.patterns[this.recPattern].duration = stopTime - this.recStart;
+			delete this.recPattern;
+			delete this.recStart;
+			//console.log(this.patterns);
+		}
+
+		if (this.playPattern!==undefined) {
+			delete this.playPattern;
+		}
+	}
+
 	onKeyEvent(e) {
 		let input = this.inputs[e.from];
 		if (input.enabled && input.min<=e.note && input.max>=e.note ) {
@@ -384,6 +473,16 @@ class Synth {
 				e.note += input.shift
 			}
 			this.generator.port.postMessage(e);
+
+			if (this.recPattern !== undefined) {
+				let now = Date.now();
+				if (!this.recStart) {
+					this.recStart = now;
+				}
+				e = structuredClone(e);
+				e.ts = now - this.recStart;
+				this.patterns[this.recPattern].events.push(e);
+			}
 		}
 	}
 	
@@ -511,7 +610,7 @@ function midiMessageReceived(event) {
 	const velocity = (event.data.length > 2) ? event.data[2]/127. : 1;
   
 	if (cmd === NOTE_OFF || cmd === NOTE_ON) {
-		console.log(`MIDI command ${cmd} from ${event.srcElement.name}: pitch:${pitch}, velocity: ${velocity}`);
+		//console.log(`MIDI command ${cmd} from ${event.srcElement.name}: pitch:${pitch}, velocity: ${velocity}`);
 
 		var msg = {
 			type: (cmd == NOTE_OFF ? "release" : "press"),
@@ -531,6 +630,21 @@ function midiMessageReceived(event) {
     <template id="synth-template">
       <div class="synth">
 	<fieldset class="input-mappings collapsed"><legend onclick="this.parentElement.classList.toggle('collapsed')">Input mappings</legend></fieldset>
+	<fieldset class="looper collapsed">
+	  <legend onclick="this.parentElement.classList.toggle('collapsed')">Looper</legend>
+<!--
+	  Mode:
+	  <input type="radio" name="mode" id="auto" checked /><label for="auto">auto</label>
+	  <input type="radio" name="mode" id="manual"/><label for="auto">manual</label>
+	  <label for="bpm">BPM:</label>
+	  <input type="text" name="bpm" class="small" value="80"/>
+	  <label for="pattern-length">Pattern length:</label>
+	  <input type="text" name="pattern-length" class="small" value="16"/>
+-->
+	  <input type="submit" name="rec" class="rec" value="rec"/>
+	  <input type="submit" name="play" class="play" value="play"/>
+	  <input type="submit" name="stop" class="stop" value="stop"/>
+	</fieldset>
 	<input type="text" disabled="disabled" class="status ko" value="click or press key to start"/><br/>
 	<textarea class="doc" disabled>/*
 context:
@@ -561,7 +675,7 @@ return [
 ];
 </textarea><br/>
 	<input type="submit" class="submit" value="submit"/>
-	<input type="submit" class="stop" value="STOP!"/>
+	<input type="submit" class="emergency-stop" value="STOP!"/>
 	<input type="submit" class="delete" value="&#x274C; delete"/><br/>
 	<dialog name="delete">
 	  <p>Really delete synth?</p>
